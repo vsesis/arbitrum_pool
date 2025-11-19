@@ -19,19 +19,29 @@ ARBITRUM_CHAIN_ID = 42161
 
 # 1. Основной Uniswap V3 Arbitrum Subgraph
 # Subgraph ID: FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM
-UNISWAP_V3_SUBGRAPH_URL = os.getenv(
-    "UNISWAP_V3_SUBGRAPH_URL",
-    # Fallback на hosted service (deprecated, может не работать)
-    "https://api.thegraph.com/subgraphs/name/ianlapham/uniswap-arbitrum-one"
-)
+# Содержит: pools, ticks, swaps, mints, burns
+UNISWAP_V3_SUBGRAPH_URL = os.getenv("UNISWAP_V3_SUBGRAPH_URL")
+if not UNISWAP_V3_SUBGRAPH_URL:
+    raise ValueError(
+        "❌ UNISWAP_V3_SUBGRAPH_URL не установлен!\n\n"
+        "Создайте .env файл и добавьте:\n"
+        "UNISWAP_V3_SUBGRAPH_URL=https://gateway.thegraph.com/api/YOUR_API_KEY/subgraphs/id/FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM\n\n"
+        "Получите API ключ на https://thegraph.com/studio/\n"
+        "См. .env.example для примера конфигурации"
+    )
 
 # 2. Uniswap V3 User Positions Arbitrum Subgraph
 # Subgraph ID: EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG
-UNISWAP_V3_POSITIONS_SUBGRAPH_URL = os.getenv(
-    "UNISWAP_V3_POSITIONS_SUBGRAPH_URL",
-    # Если не указан, используем основной (позиции будут недоступны)
-    UNISWAP_V3_SUBGRAPH_URL
-)
+# Содержит: positions (LP NFT позиции)
+UNISWAP_V3_POSITIONS_SUBGRAPH_URL = os.getenv("UNISWAP_V3_POSITIONS_SUBGRAPH_URL")
+if not UNISWAP_V3_POSITIONS_SUBGRAPH_URL:
+    raise ValueError(
+        "❌ UNISWAP_V3_POSITIONS_SUBGRAPH_URL не установлен!\n\n"
+        "Создайте .env файл и добавьте:\n"
+        "UNISWAP_V3_POSITIONS_SUBGRAPH_URL=https://gateway.thegraph.com/api/YOUR_API_KEY/subgraphs/id/EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG\n\n"
+        "Получите API ключ на https://thegraph.com/studio/\n"
+        "См. .env.example для примера конфигурации"
+    )
 
 # Arbitrum RPC endpoint (опционально для будущих улучшений)
 ARBITRUM_RPC_URL = os.getenv(

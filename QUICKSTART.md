@@ -6,30 +6,50 @@
 pip install -r requirements.txt
 ```
 
-## Запуск веб-приложения
+## Настройка subgraph (ОБЯЗАТЕЛЬНО!)
 
-1. Убедитесь, что `.env` настроен с актуальным URL subgraph:
+**ВАЖНО:** Проект требует API ключ The Graph для работы с официальными subgraphs.
+
+### 1. Получите API ключ:
+
+1. Зарегистрируйтесь на https://thegraph.com/studio/
+2. Создайте API ключ в разделе "API Keys"
+3. Скопируйте ключ
+
+### 2. Создайте .env файл:
 
 ```bash
 cp .env.example .env
-# Отредактируйте .env при необходимости
 ```
 
-2. Запустите backend сервер:
+### 3. Отредактируйте .env и замените YOUR_API_KEY:
+
+Откройте `.env` и вставьте ваш API ключ:
+
+```env
+UNISWAP_V3_SUBGRAPH_URL=https://gateway.thegraph.com/api/YOUR_API_KEY/subgraphs/id/FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM
+UNISWAP_V3_POSITIONS_SUBGRAPH_URL=https://gateway.thegraph.com/api/YOUR_API_KEY/subgraphs/id/EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG
+```
+
+> **Примечание**: Старый Hosted Service больше не работает. Используйте только Gateway URLs.
+
+## Запуск веб-приложения
+
+1. Запустите backend сервер:
 
 ```bash
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-3. Откройте браузер по адресу:
+2. Откройте браузер по адресу:
 
 ```
 http://localhost:8000
 ```
 
-4. Введите адрес пула для анализа (по умолчанию уже введен дефолтный пул `0xc6962004f452be9203591991d15f6b388e09e8d0`)
+3. Введите адрес пула для анализа (по умолчанию уже введен дефолтный пул `0xc6962004f452be9203591991d15f6b388e09e8d0`)
 
-5. Нажмите "Analyze Pool" и изучайте данные через вкладки!
+4. Нажмите "Analyze Pool" и изучайте данные через вкладки!
 
 ## Структура приложения
 

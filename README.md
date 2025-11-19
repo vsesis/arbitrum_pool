@@ -50,25 +50,35 @@ pip install -r requirements.txt
 
 ### 4. Настрой конфигурацию
 
-Скопируй файл `.env.example` в `.env`:
+**ВАЖНО:** Проект использует официальные subgraphs The Graph через Gateway API (требуется API ключ).
+
+#### Получите API ключ The Graph:
+
+1. Зарегистрируйтесь на https://thegraph.com/studio/
+2. Создайте API ключ в разделе "API Keys"
+3. Скопируйте ключ
+
+#### Создайте .env файл:
 
 ```bash
 cp .env.example .env
 ```
 
-Отредактируй `.env` и укажи актуальный URL сабграфа:
+#### Отредактируйте .env и замените YOUR_API_KEY на ваш ключ:
 
 ```env
-UNISWAP_V3_SUBGRAPH_URL=https://api.thegraph.com/subgraphs/name/ianlapham/uniswap-arbitrum-one
+# Основной Uniswap V3 Arbitrum Subgraph (пулы, тики, ликвидность)
+UNISWAP_V3_SUBGRAPH_URL=https://gateway.thegraph.com/api/YOUR_API_KEY/subgraphs/id/FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM
+
+# Positions Subgraph (LP позиции)
+UNISWAP_V3_POSITIONS_SUBGRAPH_URL=https://gateway.thegraph.com/api/YOUR_API_KEY/subgraphs/id/EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG
 ```
 
-**Где взять актуальный URL сабграфа:**
+**Subgraph IDs:**
+- Основной: `FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM` (pools, ticks, swaps)
+- Positions: `EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG` (LP NFT positions)
 
-- Uniswap Docs: https://docs.uniswap.org/api/subgraph/overview
-- The Graph Explorer: https://thegraph.com/explorer
-- Для Arbitrum ищи: "uniswap-v3-arbitrum" или "uniswap-arbitrum-one"
-
-> **Примечание**: Hosted Service может быть deprecated. Рекомендуется использовать децентрализованную сеть The Graph с API ключом.
+> **Примечание**: Старый Hosted Service (api.thegraph.com/subgraphs/name/...) больше не поддерживается. Используйте только Gateway URLs.
 
 ## 📁 Структура проекта
 
