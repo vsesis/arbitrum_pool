@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uniswap v3 Pool Analytics | Arbitrum</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        body {
+            background: #0a0a0f;
+            color: #e5e7eb;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+        .card {
+            background: #13131a;
+            border: 1px solid #1f1f29;
+            border-radius: 12px;
+            padding: 24px;
+        }
+        .tab-active {
+            border-bottom: 2px solid #3b82f6;
+            color: #3b82f6;
+        }
+        .loader {
+            border: 3px solid #1f1f29;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        input:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+            padding: 10px 24px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+        .btn-secondary {
+            background: #1f1f29;
+            color: #e5e7eb;
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: 1px solid #2d2d3a;
+            cursor: pointer;
+            font-weight: 400;
+            transition: all 0.2s;
+        }
+        .btn-secondary:hover {
+            background: #2d2d3a;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th {
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
+            color: #9ca3af;
+            padding: 12px;
+            border-bottom: 1px solid #1f1f29;
+        }
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #1f1f29;
+            font-size: 14px;
+        }
+        tr:hover {
+            background: #1a1a22;
+        }
+        .stat-label {
+            font-size: 13px;
+            color: #9ca3af;
+            margin-bottom: 4px;
+        }
+        .stat-value {
+            font-size: 20px;
+            font-weight: 600;
+            color: #e5e7eb;
+        }
+        .positive {
+            color: #10b981;
+        }
+        .negative {
+            color: #ef4444;
+        }
+    </style>
+</head>
+<body class="p-8">
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold mb-2">Uniswap v3 Pool Analytics</h1>
+            <p class="text-gray-400">Arbitrum One Network</p>
+        </header>
+
+        <!-- Pool Input -->
+        <div class="card mb-8">
+            <label class="stat-label mb-2 block">Pool Address</label>
+            <div class="flex gap-4">
+                <input
+                    type="text"
+                    id="poolAddress"
+                    value="0xc6962004f452be9203591991d15f6b388e09e8d0"
+                    class="flex-1 bg-[#1a1a22] border border-[#2d2d3a] rounded-lg px-4 py-2 text-white"
+                    placeholder="Enter pool address..."
+                />
+                <button onclick="analyzePool()" class="btn-primary">
+                    Analyze Pool
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading -->
+        <div id="loading" class="hidden flex justify-center items-center py-20">
+            <div>
+                <div class="loader mx-auto mb-4"></div>
+                <p class="text-gray-400">Loading pool data...</p>
+            </div>
+        </div>
+
+        <!-- Error -->
+        <div id="error" class="hidden card mb-8 border-red-900 bg-red-900/10">
+            <p class="text-red-400" id="errorMessage"></p>
+        </div>
+
+        <!-- Content -->
+        <div id="content" class="hidden">
+            <!-- Pool Overview -->
+            <div class="card mb-8">
+                <h2 class="text-xl font-semibold mb-6">Pool Overview</h2>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+                    <div>
+                        <div class="stat-label">Pair</div>
+                        <div class="stat-value" id="poolPair">-</div>
+                    </div>
+                    <div>
+                        <div class="stat-label">Fee Tier</div>
+                        <div class="stat-value" id="poolFee">-</div>
+                    </div>
+                    <div>
+                        <div class="stat-label">Current Price</div>
+                        <div class="stat-value" id="poolPrice">-</div>
+                    </div>
+                    <div>
+                        <div class="stat-label">Liquidity</div>
+                        <div class="stat-value" id="poolLiquidity">-</div>
+                    </div>
+                    <div>
+                        <div class="stat-label">Total LPs</div>
+                        <div class="stat-value" id="poolLps">-</div>
+                    </div>
+                    <div>
+                        <div class="stat-label">Total Positions</div>
+                        <div class="stat-value" id="poolPositions">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Liquidity Chart -->
+            <div class="card mb-8">
+                <h2 class="text-xl font-semibold mb-6">Liquidity Distribution</h2>
+                <canvas id="liquidityChart" height="100"></canvas>
+            </div>
+
+            <!-- Tabs -->
+            <div class="flex gap-8 mb-6 border-b border-[#1f1f29]">
+                <button class="pb-3 font-medium tab-active" onclick="switchTab('lp-overview')">
+                    LP Overview
+                </button>
+                <button class="pb-3 font-medium text-gray-400" onclick="switchTab('positions')">
+                    Positions
+                </button>
+                <button class="pb-3 font-medium text-gray-400" onclick="switchTab('downloads')">
+                    Downloads
+                </button>
+            </div>
+
+            <!-- LP Overview Tab -->
+            <div id="tab-lp-overview" class="tab-content">
+                <div class="card">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-lg font-semibold">Liquidity Providers</h3>
+                        <input
+                            type="text"
+                            id="lpSearch"
+                            placeholder="Search by address..."
+                            class="bg-[#1a1a22] border border-[#2d2d3a] rounded-lg px-4 py-2 text-white w-64"
+                            onkeyup="searchLPs()"
+                        />
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Owner</th>
+                                    <th>Positions</th>
+                                    <th>Net Deposited</th>
+                                    <th>Total Fees</th>
+                                </tr>
+                            </thead>
+                            <tbody id="lpTable">
+                                <tr><td colspan="4" class="text-center text-gray-400 py-8">No data</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="flex justify-between items-center mt-6">
+                        <div class="text-sm text-gray-400" id="lpPagination">Page 1 of 1</div>
+                        <div class="flex gap-2">
+                            <button onclick="previousLpPage()" class="btn-secondary">Previous</button>
+                            <button onclick="nextLpPage()" class="btn-secondary">Next</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Positions Tab -->
+            <div id="tab-positions" class="tab-content hidden">
+                <div class="card">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-lg font-semibold">Positions</h3>
+                        <input
+                            type="text"
+                            id="positionLpFilter"
+                            placeholder="Filter by LP address..."
+                            class="bg-[#1a1a22] border border-[#2d2d3a] rounded-lg px-4 py-2 text-white w-64"
+                            onkeyup="filterPositions()"
+                        />
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Owner</th>
+                                    <th>Price Range</th>
+                                    <th>Liquidity</th>
+                                    <th>Total Fees</th>
+                                </tr>
+                            </thead>
+                            <tbody id="positionsTable">
+                                <tr><td colspan="4" class="text-center text-gray-400 py-8">No data</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="flex justify-between items-center mt-6">
+                        <div class="text-sm text-gray-400" id="positionsPagination">Page 1 of 1</div>
+                        <div class="flex gap-2">
+                            <button onclick="previousPositionsPage()" class="btn-secondary">Previous</button>
+                            <button onclick="nextPositionsPage()" class="btn-secondary">Next</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Downloads Tab -->
+            <div id="tab-downloads" class="tab-content hidden">
+                <div class="card">
+                    <h3 class="text-lg font-semibold mb-6">Export Data</h3>
+                    <div class="space-y-4">
+                        <div class="flex justify-between items-center p-4 bg-[#1a1a22] rounded-lg">
+                            <div>
+                                <div class="font-medium mb-1">LP Summary CSV</div>
+                                <div class="text-sm text-gray-400">Aggregated data by liquidity provider</div>
+                            </div>
+                            <button onclick="downloadCSV('lp-summary')" class="btn-primary">
+                                Download
+                            </button>
+                        </div>
+                        <div class="flex justify-between items-center p-4 bg-[#1a1a22] rounded-lg">
+                            <div>
+                                <div class="font-medium mb-1">Positions CSV</div>
+                                <div class="text-sm text-gray-400">Detailed position data</div>
+                            </div>
+                            <button onclick="downloadCSV('positions')" class="btn-primary">
+                                Download
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentPool = '';
+        let poolData = {};
+        let lpPage = 1;
+        let positionsPage = 1;
+        let lpSearch = '';
+        let positionLpFilter = '';
+        let chart = null;
+
+        // Analyze pool
+        async function analyzePool() {
+            const poolAddress = document.getElementById('poolAddress').value.trim();
+            if (!poolAddress) {
+                showError('Please enter a pool address');
+                return;
+            }
+
+            currentPool = poolAddress.toLowerCase();
+            hideError();
+            showLoading();
+            hideContent();
+
+            try {
+                // Load pool summary
+                const summary = await fetch(`/api/pool/${currentPool}/summary`).then(r => r.json());
+                poolData.summary = summary;
+
+                // Load liquidity data
+                const liquidity = await fetch(`/api/pool/${currentPool}/liquidity`).then(r => r.json());
+                poolData.liquidity = liquidity;
+
+                // Display data
+                displayPoolOverview(summary);
+                displayLiquidityChart(liquidity);
+
+                // Load LP overview (first tab)
+                await loadLpOverview();
+
+                showContent();
+            } catch (error) {
+                showError(error.message || 'Failed to load pool data');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Display pool overview
+        function displayPoolOverview(data) {
+            document.getElementById('poolPair').textContent =
+                `${data.token0.symbol} / ${data.token1.symbol}`;
+            document.getElementById('poolFee').textContent =
+                `${data.fee_percentage}%`;
+            document.getElementById('poolPrice').textContent =
+                `${data.current_price.toFixed(2)} ${data.token1.symbol}`;
+            document.getElementById('poolLiquidity').textContent =
+                parseFloat(data.liquidity).toExponential(2);
+            document.getElementById('poolLps').textContent = data.total_lps;
+            document.getElementById('poolPositions').textContent = data.total_positions;
+        }
+
+        // Display liquidity chart
+        function displayLiquidityChart(data) {
+            const ctx = document.getElementById('liquidityChart').getContext('2d');
+
+            if (chart) {
+                chart.destroy();
+            }
+
+            // Filter points around current price for better visualization
+            const currentPrice = data.current_price;
+            const rangePercent = 50; // ±50% from current price
+            const minPrice = currentPrice * (1 - rangePercent / 100);
+            const maxPrice = currentPrice * (1 + rangePercent / 100);
+
+            const filteredPoints = data.points.filter(p =>
+                p.price >= minPrice && p.price <= maxPrice
+            );
+
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: filteredPoints.map(p => p.price.toFixed(2)),
+                    datasets: [{
+                        label: 'Liquidity',
+                        data: filteredPoints.map(p => p.liquidity),
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: true,
+                        tension: 0.1,
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            backgroundColor: '#1a1a22',
+                            borderColor: '#2d2d3a',
+                            borderWidth: 1,
+                            titleColor: '#e5e7eb',
+                            bodyColor: '#9ca3af',
+                            callbacks: {
+                                label: function(context) {
+                                    return `Liquidity: ${context.parsed.y.toExponential(2)}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: '#1f1f29' },
+                            ticks: {
+                                color: '#9ca3af',
+                                maxTicksLimit: 10
+                            },
+                            title: {
+                                display: true,
+                                text: `Price (${data.token1_symbol}/${data.token0_symbol})`,
+                                color: '#9ca3af'
+                            }
+                        },
+                        y: {
+                            grid: { color: '#1f1f29' },
+                            ticks: {
+                                color: '#9ca3af',
+                                callback: function(value) {
+                                    return value.toExponential(0);
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Liquidity',
+                                color: '#9ca3af'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Load LP overview
+        async function loadLpOverview() {
+            const data = await fetch(
+                `/api/pool/${currentPool}/lp-summary?page=${lpPage}&page_size=50&search=${lpSearch}`
+            ).then(r => r.json());
+
+            const tbody = document.getElementById('lpTable');
+            tbody.innerHTML = '';
+
+            if (data.data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center text-gray-400 py-8">No data</td></tr>';
+                return;
+            }
+
+            const token0 = poolData.summary.token0.symbol;
+            const token1 = poolData.summary.token1.symbol;
+
+            data.data.forEach(lp => {
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td><span class="font-mono text-xs">${lp.owner.slice(0, 6)}...${lp.owner.slice(-4)}</span></td>
+                    <td>${lp.positions_count}</td>
+                    <td>${lp.net_deposited_token0.toFixed(4)} ${token0}<br>${lp.net_deposited_token1.toFixed(2)} ${token1}</td>
+                    <td class="positive">${lp.fees_token0.toFixed(6)} ${token0}<br>${lp.fees_token1.toFixed(2)} ${token1}</td>
+                `;
+            });
+
+            document.getElementById('lpPagination').textContent =
+                `Page ${data.page} of ${data.total_pages} (${data.total} total)`;
+        }
+
+        // Load positions
+        async function loadPositions() {
+            const data = await fetch(
+                `/api/pool/${currentPool}/positions?page=${positionsPage}&page_size=50&lp=${positionLpFilter}`
+            ).then(r => r.json());
+
+            const tbody = document.getElementById('positionsTable');
+            tbody.innerHTML = '';
+
+            if (data.data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center text-gray-400 py-8">No data</td></tr>';
+                return;
+            }
+
+            const token0 = poolData.summary.token0.symbol;
+            const token1 = poolData.summary.token1.symbol;
+
+            data.data.forEach(pos => {
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td><span class="font-mono text-xs">${pos.owner.slice(0, 6)}...${pos.owner.slice(-4)}</span></td>
+                    <td>${pos.price_lower.toFixed(2)} - ${pos.price_upper.toFixed(2)}</td>
+                    <td>${parseFloat(pos.liquidity).toExponential(2)}</td>
+                    <td class="positive">${pos.total_fees_token0.toFixed(6)} ${token0}<br>${pos.total_fees_token1.toFixed(2)} ${token1}</td>
+                `;
+            });
+
+            document.getElementById('positionsPagination').textContent =
+                `Page ${data.page} of ${data.total_pages} (${data.total} total)`;
+        }
+
+        // Tab switching
+        function switchTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.flex.gap-8 button').forEach(btn => {
+                btn.classList.remove('tab-active', 'text-blue-500');
+                btn.classList.add('text-gray-400');
+            });
+            event.target.classList.add('tab-active');
+            event.target.classList.remove('text-gray-400');
+
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.add('hidden'));
+
+            // Show selected tab
+            const selectedTab = document.getElementById(`tab-${tabName}`);
+            selectedTab.classList.remove('hidden');
+
+            // Load data if needed
+            if (tabName === 'positions' && !selectedTab.dataset.loaded) {
+                loadPositions();
+                selectedTab.dataset.loaded = 'true';
+            }
+        }
+
+        // Search and pagination
+        function searchLPs() {
+            lpSearch = document.getElementById('lpSearch').value;
+            lpPage = 1;
+            loadLpOverview();
+        }
+
+        function filterPositions() {
+            positionLpFilter = document.getElementById('positionLpFilter').value;
+            positionsPage = 1;
+            loadPositions();
+        }
+
+        function previousLpPage() {
+            if (lpPage > 1) {
+                lpPage--;
+                loadLpOverview();
+            }
+        }
+
+        function nextLpPage() {
+            lpPage++;
+            loadLpOverview();
+        }
+
+        function previousPositionsPage() {
+            if (positionsPage > 1) {
+                positionsPage--;
+                loadPositions();
+            }
+        }
+
+        function nextPositionsPage() {
+            positionsPage++;
+            loadPositions();
+        }
+
+        // Download CSV
+        function downloadCSV(type) {
+            window.location.href = `/api/pool/${currentPool}/csv/${type}`;
+        }
+
+        // UI helpers
+        function showLoading() {
+            document.getElementById('loading').classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').classList.add('hidden');
+        }
+
+        function showContent() {
+            document.getElementById('content').classList.remove('hidden');
+        }
+
+        function hideContent() {
+            document.getElementById('content').classList.add('hidden');
+        }
+
+        function showError(message) {
+            document.getElementById('errorMessage').textContent = message;
+            document.getElementById('error').classList.remove('hidden');
+        }
+
+        function hideError() {
+            document.getElementById('error').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>

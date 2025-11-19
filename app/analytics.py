@@ -276,6 +276,188 @@ def export_lp_summary_to_csv(
     return filepath
 
 
+def get_pool_summary_data(pool: Pool) -> Dict:
+    """
+    Возвращает краткую информацию о пуле в виде словаря
+
+    Args:
+        pool: информация о пуле
+
+    Returns:
+        Dict с данными о пуле
+    """
+    return {
+        "address": pool.address,
+        "token0": {
+            "symbol": pool.token0.symbol,
+            "address": pool.token0.address,
+            "decimals": pool.token0.decimals,
+            "name": pool.token0.name
+        },
+        "token1": {
+            "symbol": pool.token1.symbol,
+            "address": pool.token1.address,
+            "decimals": pool.token1.decimals,
+            "name": pool.token1.name
+        },
+        "fee_tier": pool.fee_tier,
+        "fee_percentage": float(pool.fee_percentage),
+        "current_price": float(pool.current_price),
+        "tick": pool.tick,
+        "liquidity": str(pool.liquidity),
+        "network": "Arbitrum One"
+    }
+
+
+def get_lp_summary_data(
+    summaries: Dict[str, LpOwnerSummary],
+    pool: Pool,
+    page: int = 1,
+    page_size: int = 50,
+    search: str = ""
+) -> Dict:
+    """
+    Возвращает агрегированные данные по LP с пагинацией
+
+    Args:
+        summaries: словарь с агрегированными данными
+        pool: информация о пуле
+        page: номер страницы (начиная с 1)
+        page_size: размер страницы
+        search: фильтр по адресу LP
+
+    Returns:
+        Dict с данными по LP и метаинформацией
+    """
+    # Сортируем по общим комиссиям
+    sorted_summaries = sorted(
+        summaries.values(),
+        key=lambda s: float(s.total_fees_token0 + s.total_fees_token1),
+        reverse=True
+    )
+
+    # Фильтруем по поиску
+    if search:
+        search_lower = search.lower()
+        sorted_summaries = [s for s in sorted_summaries if search_lower in s.owner.lower()]
+
+    total = len(sorted_summaries)
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    page_summaries = sorted_summaries[start_idx:end_idx]
+
+    return {
+        "data": [
+            {
+                "owner": s.owner,
+                "positions_count": s.positions_count,
+                "deposited_token0": float(s.total_deposited_token0),
+                "deposited_token1": float(s.total_deposited_token1),
+                "withdrawn_token0": float(s.total_withdrawn_token0),
+                "withdrawn_token1": float(s.total_withdrawn_token1),
+                "net_deposited_token0": float(s.net_deposited_token0),
+                "net_deposited_token1": float(s.net_deposited_token1),
+                "fees_token0": float(s.total_fees_token0),
+                "fees_token1": float(s.total_fees_token1)
+            }
+            for s in page_summaries
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size
+    }
+
+
+def get_positions_data(
+    positions: List[Position],
+    pool: Pool,
+    page: int = 1,
+    page_size: int = 50,
+    lp_filter: str = ""
+) -> Dict:
+    """
+    Возвращает данные по позициям с пагинацией
+
+    Args:
+        positions: список позиций
+        pool: информация о пуле
+        page: номер страницы
+        page_size: размер страницы
+        lp_filter: фильтр по адресу LP
+
+    Returns:
+        Dict с данными по позициям
+    """
+    # Фильтруем по LP
+    filtered = positions
+    if lp_filter:
+        lp_lower = lp_filter.lower()
+        filtered = [p for p in positions if lp_lower in p.owner.lower()]
+
+    total = len(filtered)
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    page_positions = filtered[start_idx:end_idx]
+
+    # Конвертируем в словари
+    data = []
+    for pos in page_positions:
+        price_lower = tick_to_price(pos.tick_lower, pool.token0.decimals, pool.token1.decimals)
+        price_upper = tick_to_price(pos.tick_upper, pool.token0.decimals, pool.token1.decimals)
+
+        data.append({
+            "id": pos.id,
+            "owner": pos.owner,
+            "liquidity": str(pos.liquidity),
+            "tick_lower": pos.tick_lower,
+            "tick_upper": pos.tick_upper,
+            "price_lower": float(price_lower),
+            "price_upper": float(price_upper),
+            "deposited_token0": float(pos.deposited_token0),
+            "deposited_token1": float(pos.deposited_token1),
+            "withdrawn_token0": float(pos.withdrawn_token0),
+            "withdrawn_token1": float(pos.withdrawn_token1),
+            "collected_fees_token0": float(pos.collected_fees_token0),
+            "collected_fees_token1": float(pos.collected_fees_token1),
+            "total_fees_token0": float(pos.total_fees_token0),
+            "total_fees_token1": float(pos.total_fees_token1)
+        })
+
+    return {
+        "data": data,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size
+    }
+
+
+def get_liquidity_chart_data(distribution: LiquidityDistribution, pool: Pool) -> Dict:
+    """
+    Возвращает данные для построения графика ликвидности
+
+    Args:
+        distribution: распределение ликвидности
+        pool: информация о пуле
+
+    Returns:
+        Dict с данными для графика
+    """
+    return {
+        "current_price": float(pool.current_price),
+        "token0_symbol": pool.token0.symbol,
+        "token1_symbol": pool.token1.symbol,
+        "points": [
+            {
+                "price": float(price),
+                "liquidity": float(liq)
+            }
+            for price, liq in zip(distribution.prices, distribution.liquidity)
+        ]
+    }
+
+
 def print_pool_summary(pool: Pool):
     """Выводит краткую информацию о пуле в консоль"""
     print("\n" + "="*80)
