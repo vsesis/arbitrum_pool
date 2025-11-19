@@ -6,23 +6,55 @@ from typing import Dict, List, Optional
 from decimal import Decimal
 import logging
 
-from .config import UNISWAP_V3_SUBGRAPH_URL, MAX_POSITIONS_PER_QUERY, MAX_TICKS_PER_QUERY
+from .config import (
+    UNISWAP_V3_SUBGRAPH_URL,
+    UNISWAP_V3_POSITIONS_SUBGRAPH_URL,
+    MAX_POSITIONS_PER_QUERY,
+    MAX_TICKS_PER_QUERY
+)
 from .models import Pool, Token, Position, Tick
 
 logger = logging.getLogger(__name__)
 
 
 class UniswapV3Client:
-    """Клиент для работы с Uniswap v3 subgraph"""
+    """
+    Клиент для работы с Uniswap v3 subgraph на Arbitrum
 
-    def __init__(self, subgraph_url: str = UNISWAP_V3_SUBGRAPH_URL):
+    Использует два отдельных subgraph:
+    - Основной: pools, ticks, swaps, etc.
+    - Positions: LP NFT позиции
+    """
+
+    def __init__(
+        self,
+        subgraph_url: str = UNISWAP_V3_SUBGRAPH_URL,
+        positions_subgraph_url: str = UNISWAP_V3_POSITIONS_SUBGRAPH_URL
+    ):
         self.subgraph_url = subgraph_url
+        self.positions_subgraph_url = positions_subgraph_url
 
-    def _query(self, query: str, variables: Optional[Dict] = None) -> Dict:
-        """Выполняет GraphQL запрос"""
+        logger.info(f"Инициализация клиента:")
+        logger.info(f"  Основной subgraph: {subgraph_url[:80]}...")
+        logger.info(f"  Positions subgraph: {positions_subgraph_url[:80]}...")
+
+    def _query(self, query: str, variables: Optional[Dict] = None, use_positions_subgraph: bool = False) -> Dict:
+        """
+        Выполняет GraphQL запрос
+
+        Args:
+            query: GraphQL запрос
+            variables: Переменные для запроса
+            use_positions_subgraph: Использовать positions subgraph вместо основного
+
+        Returns:
+            Dict с данными ответа
+        """
+        url = self.positions_subgraph_url if use_positions_subgraph else self.subgraph_url
+
         try:
             response = requests.post(
-                self.subgraph_url,
+                url,
                 json={"query": query, "variables": variables or {}},
                 timeout=30
             )
@@ -34,7 +66,7 @@ class UniswapV3Client:
 
             return data.get("data", {})
         except Exception as e:
-            logger.error(f"Ошибка запроса к subgraph: {e}")
+            logger.error(f"Ошибка запроса к subgraph ({url[:60]}...): {e}")
             raise
 
     def get_pool(self, pool_address: str) -> Pool:
@@ -142,17 +174,22 @@ class UniswapV3Client:
         return ticks
 
     def get_pool_positions(self, pool_address: str) -> List[Position]:
-        """Получает все позиции в пуле (пробует несколько схем GraphQL)"""
+        """
+        Получает все позиции в пуле из positions subgraph
+
+        Использует отдельный Uniswap V3 User Positions Arbitrum Subgraph
+        Subgraph ID: EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG
+        """
         pool_id = pool_address.lower()
         positions = []
 
-        # Попытка 1: Запрос напрямую к positions с pool_
-        query_direct = """
+        # Запрос к positions subgraph
+        query = """
         query GetPositions($poolId: String!, $skip: Int!) {
             positions(
                 first: 1000
                 skip: $skip
-                where: { pool_: { id: $poolId }, liquidity_gt: "0" }
+                where: { pool: $poolId, liquidity_gt: "0" }
                 orderBy: liquidity
                 orderDirection: desc
             ) {
@@ -176,10 +213,12 @@ class UniswapV3Client:
         """
 
         try:
-            logger.info(f"Получение позиций для {pool_address} (метод 1: прямой запрос с pool_)")
+            logger.info(f"Получение позиций для пула {pool_address} из positions subgraph...")
             skip = 0
+
             while True:
-                data = self._query(query_direct, {"poolId": pool_id, "skip": skip})
+                # Используем positions subgraph
+                data = self._query(query, {"poolId": pool_id, "skip": skip}, use_positions_subgraph=True)
                 positions_batch = data.get("positions", [])
 
                 if not positions_batch:
@@ -204,19 +243,17 @@ class UniswapV3Client:
 
                 if len(positions_batch) < 1000:
                     break
-                skip += 1000
 
-            if positions:
-                logger.info(f"Успешно загружено {len(positions)} позиций (метод 1)")
-                return positions
+                skip += 1000
+                logger.info(f"Загружено {len(positions)} позиций...")
+
+            logger.info(f"✅ Успешно загружено {len(positions)} позиций для пула {pool_address}")
+            return positions
 
         except Exception as e:
-            logger.warning(f"Метод 1 не сработал: {str(e)[:100]}")
+            logger.error(f"❌ Ошибка при получении позиций: {str(e)[:200]}")
+            logger.warning("Проверьте настройку UNISWAP_V3_POSITIONS_SUBGRAPH_URL в .env файле")
+            logger.info("Positions subgraph должен содержать Subgraph ID: EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG")
+            logger.info("Приложение продолжит работу без данных по позициям (Pool Overview и график доступны)")
 
-        # Попытка 2: Через pool без вложенности
-        logger.info(f"Пробуем метод 2: без вложенной структуры")
-        logger.warning(f"Subgraph для Arbitrum может не поддерживать запрос positions.")
-        logger.info("Приложение продолжит работу без данных по позициям.")
-        logger.info("Доступна информация о пуле и график ликвидности.")
-
-        return positions
+            return positions
