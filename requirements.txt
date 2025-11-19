@@ -12,6 +12,10 @@ matplotlib>=3.7.0
 # Конфигурация из .env файлов
 python-dotenv>=1.0.0
 
+# Web API (FastAPI)
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
 # Опционально: более продвинутая работа с GraphQL
 # gql[all]>=3.4.0
 
