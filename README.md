@@ -4,17 +4,21 @@
 
 ## 🎯 Возможности
 
+### ✅ Доступно
+
 - **Веб-интерфейс**: Минималистичный UI в стиле nof1.ai для удобного анализа
 - **Информация о пуле**: Получение детальной информации о токенах, комиссиях, текущей цене
 - **График ликвидности**: Интерактивная визуализация распределения ликвидности по ценовым диапазонам
-- **Анализ позиций**: Детальная информация по всем активным позициям в пуле
-- **Аналитика LP**: Агрегация данных по провайдерам ликвидности:
-  - Внесённые суммы (deposited)
-  - Выведенные суммы (withdrawn)
-  - Заработанные комиссии (collected + uncollected fees)
-  - Ценовые диапазоны позиций
-- **Экспорт данных**: CSV файлы для дальнейшего анализа
+- **Данные тиков**: Детальная информация о ликвидности на каждом тике
 - **REST API**: FastAPI backend для интеграции с другими приложениями
+
+### ⚠️ Ограничено
+
+- **Анализ позиций**: ❌ Недоступен - официальные Arbitrum subgraphs не предоставляют детальные данные о позициях
+- **Аналитика LP**: ❌ Недоступна - нет информации о владельцах, депозитах, выводах и комиссиях
+- **Экспорт LP данных**: ❌ Недоступен - нет данных для экспорта
+
+**Примечание**: Официальные Uniswap V3 subgraphs для Arbitrum через The Graph Gateway не содержат детальной информации о LP позициях. См. [LP_DATA_LIMITATIONS.md](LP_DATA_LIMITATIONS.md) для деталей и возможных решений.
 
 ## 📋 Требования
 
@@ -67,18 +71,17 @@ cp .env.example .env
 #### Отредактируйте .env и замените YOUR_API_KEY на ваш ключ:
 
 ```env
-# Основной Uniswap V3 Arbitrum Subgraph (пулы, тики, ликвидность)
+# Основной Uniswap V3 Arbitrum Subgraph (ОБЯЗАТЕЛЬНО)
 UNISWAP_V3_SUBGRAPH_URL=https://gateway.thegraph.com/api/YOUR_API_KEY/subgraphs/id/FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM
-
-# Positions Subgraph (LP позиции)
-UNISWAP_V3_POSITIONS_SUBGRAPH_URL=https://gateway.thegraph.com/api/YOUR_API_KEY/subgraphs/id/EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG
 ```
 
-**Subgraph IDs:**
-- Основной: `FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM` (pools, ticks, swaps)
-- Positions: `EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG` (LP NFT positions)
+**Subgraph ID:**
+- `FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM` (pools, ticks, swaps, mints, burns)
 
-> **Примечание**: Старый Hosted Service (api.thegraph.com/subgraphs/name/...) больше не поддерживается. Используйте только Gateway URLs.
+> **Примечание**:
+> - Старый Hosted Service (api.thegraph.com/subgraphs/name/...) больше не поддерживается
+> - Positions subgraph имеет несовместимую схему и не используется
+> - LP данные недоступны (см. [LP_DATA_LIMITATIONS.md](LP_DATA_LIMITATIONS.md))
 
 ## 📁 Структура проекта
 

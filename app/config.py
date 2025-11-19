@@ -30,18 +30,23 @@ if not UNISWAP_V3_SUBGRAPH_URL:
         "См. .env.example для примера конфигурации"
     )
 
-# 2. Uniswap V3 User Positions Arbitrum Subgraph
-# Subgraph ID: EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG
-# Содержит: positions (LP NFT позиции)
-UNISWAP_V3_POSITIONS_SUBGRAPH_URL = os.getenv("UNISWAP_V3_POSITIONS_SUBGRAPH_URL")
-if not UNISWAP_V3_POSITIONS_SUBGRAPH_URL:
-    raise ValueError(
-        "❌ UNISWAP_V3_POSITIONS_SUBGRAPH_URL не установлен!\n\n"
-        "Создайте .env файл и добавьте:\n"
-        "UNISWAP_V3_POSITIONS_SUBGRAPH_URL=https://gateway.thegraph.com/api/YOUR_API_KEY/subgraphs/id/EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG\n\n"
-        "Получите API ключ на https://thegraph.com/studio/\n"
-        "См. .env.example для примера конфигурации"
-    )
+# 2. Uniswap V3 User Positions Arbitrum Subgraph (ОПЦИОНАЛЬНО)
+#
+# ВАЖНО: Официальный positions subgraph (EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG)
+# на Arbitrum имеет несовместимую схему и не содержит детальных данных о позициях.
+#
+# Следствия:
+# - LP данные (позиции, владельцы) будут недоступны
+# - Pool Overview и график ликвидности продолжат работать нормально
+#
+# Для получения LP данных требуется альтернативное решение:
+# - Агрегация Mint/Burn событий из основного subgraph
+# - Использование другого subgraph (например, Messari)
+# - Прямые RPC запросы к NonfungiblePositionManager контракту
+UNISWAP_V3_POSITIONS_SUBGRAPH_URL = os.getenv(
+    "UNISWAP_V3_POSITIONS_SUBGRAPH_URL",
+    UNISWAP_V3_SUBGRAPH_URL  # Используем основной как fallback (но positions там нет)
+)
 
 # Arbitrum RPC endpoint (опционально для будущих улучшений)
 ARBITRUM_RPC_URL = os.getenv(

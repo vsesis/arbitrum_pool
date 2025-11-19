@@ -177,8 +177,14 @@ class UniswapV3Client:
         """
         Получает все позиции в пуле из positions subgraph
 
-        Использует отдельный Uniswap V3 User Positions Arbitrum Subgraph
-        Subgraph ID: EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG
+        ВАЖНО: Официальные Uniswap V3 subgraphs на Arbitrum не предоставляют
+        детальные данные о позициях через The Graph Gateway API.
+
+        Возвращает пустой список если данные недоступны.
+        Приложение продолжит работу с ограниченным функционалом:
+        - Pool Overview ✅
+        - График ликвидности ✅
+        - LP данные ❌ (недоступны)
         """
         pool_id = pool_address.lower()
         positions = []
@@ -213,7 +219,7 @@ class UniswapV3Client:
         """
 
         try:
-            logger.info(f"Получение позиций для пула {pool_address} из positions subgraph...")
+            logger.info(f"Получение позиций для пула {pool_address}...")
             skip = 0
 
             while True:
@@ -247,13 +253,28 @@ class UniswapV3Client:
                 skip += 1000
                 logger.info(f"Загружено {len(positions)} позиций...")
 
-            logger.info(f"✅ Успешно загружено {len(positions)} позиций для пула {pool_address}")
+            if positions:
+                logger.info(f"✅ Успешно загружено {len(positions)} позиций для пула {pool_address}")
+            else:
+                logger.warning("⚠️  LP данные недоступны")
+                logger.info("Причина: Официальные Uniswap V3 subgraphs на Arbitrum не содержат детальных данных о позициях")
+                logger.info("Доступный функционал: Pool Overview и график ликвидности")
+
             return positions
 
         except Exception as e:
-            logger.error(f"❌ Ошибка при получении позиций: {str(e)[:200]}")
-            logger.warning("Проверьте настройку UNISWAP_V3_POSITIONS_SUBGRAPH_URL в .env файле")
-            logger.info("Positions subgraph должен содержать Subgraph ID: EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG")
-            logger.info("Приложение продолжит работу без данных по позициям (Pool Overview и график доступны)")
+            error_msg = str(e)
+            logger.warning(f"⚠️  Не удалось загрузить LP данные: {error_msg[:150]}")
 
-            return positions
+            # Более понятные сообщения для типичных ошибок
+            if "has no field" in error_msg:
+                logger.info("ℹ️  Subgraph имеет несовместимую схему (отсутствуют необходимые поля)")
+            elif "removed" in error_msg.lower():
+                logger.info("ℹ️  Используемый API endpoint был удален")
+
+            logger.info("ℹ️  Приложение продолжит работу с ограниченным функционалом")
+            logger.info("   ✅ Pool Overview")
+            logger.info("   ✅ График ликвидности")
+            logger.info("   ❌ LP данные (позиции, владельцы)")
+
+            return []
