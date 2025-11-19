@@ -9,14 +9,28 @@ load_dotenv()
 # Arbitrum One Chain ID
 ARBITRUM_CHAIN_ID = 42161
 
-# URL сабграфа Uniswap v3 для Arbitrum
-# Получить актуальный URL можно из документации Uniswap:
-# https://docs.uniswap.org/api/subgraph/overview
-# Или The Graph: https://thegraph.com/hosted-service/subgraph/ianlapham/uniswap-arbitrum-one
+# === Uniswap V3 Subgraphs для Arbitrum ===
+#
+# Uniswap V3 на Arbitrum использует ДВА отдельных subgraph:
+# 1. Основной - для пулов, тиков, свопов
+# 2. Positions - для NFT позиций LP
+#
+# Документация: https://docs.uniswap.org/api/subgraph/overview
+
+# 1. Основной Uniswap V3 Arbitrum Subgraph
+# Subgraph ID: FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM
 UNISWAP_V3_SUBGRAPH_URL = os.getenv(
     "UNISWAP_V3_SUBGRAPH_URL",
-    # Дефолтный URL - нужно заменить на актуальный из документации
+    # Fallback на hosted service (deprecated, может не работать)
     "https://api.thegraph.com/subgraphs/name/ianlapham/uniswap-arbitrum-one"
+)
+
+# 2. Uniswap V3 User Positions Arbitrum Subgraph
+# Subgraph ID: EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG
+UNISWAP_V3_POSITIONS_SUBGRAPH_URL = os.getenv(
+    "UNISWAP_V3_POSITIONS_SUBGRAPH_URL",
+    # Если не указан, используем основной (позиции будут недоступны)
+    UNISWAP_V3_SUBGRAPH_URL
 )
 
 # Arbitrum RPC endpoint (опционально для будущих улучшений)
