@@ -175,85 +175,258 @@ class UniswapV3Client:
 
     def get_pool_positions(self, pool_address: str) -> List[Position]:
         """
-        Получает все позиции в пуле из positions subgraph
+        Получает все позиции в пуле из событий Mint, Burn, Collect
 
-        Использует отдельный Uniswap V3 User Positions Arbitrum Subgraph
-        Subgraph ID: EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG
+        ВАЖНО: Positions subgraph на Arbitrum не содержит детальных данных о позициях.
+        Вместо этого мы агрегируем события из основного Uniswap V3 subgraph:
+        - Mint: добавление ликвидности (depositedToken0/1)
+        - Burn: удаление ликвидности (withdrawnToken0/1)
+        - Collect: сбор комиссий (collectedFeesToken0/1)
+
+        Позиции идентифицируются по (owner, tickLower, tickUpper).
         """
         pool_id = pool_address.lower()
-        positions = []
 
-        # Запрос к positions subgraph
+        try:
+            logger.info(f"Получение позиций для пула {pool_address} из событий Mint/Burn/Collect...")
+
+            # Загружаем все события
+            mints = self._get_pool_mints(pool_id)
+            burns = self._get_pool_burns(pool_id)
+            collects = self._get_pool_collects(pool_id)
+
+            logger.info(f"Загружено событий: Mint={len(mints)}, Burn={len(burns)}, Collect={len(collects)}")
+
+            # Агрегируем события в позиции
+            positions = self._aggregate_events_to_positions(pool_id, mints, burns, collects)
+
+            logger.info(f"✅ Успешно построено {len(positions)} позиций для пула {pool_address}")
+            return positions
+
+        except Exception as e:
+            logger.error(f"❌ Ошибка при получении позиций из событий: {str(e)[:200]}")
+            logger.info("Приложение продолжит работу без данных по позициям (Pool Overview и график доступны)")
+            import traceback
+            logger.debug(traceback.format_exc())
+
+            return []
+
+    def _get_pool_mints(self, pool_id: str) -> list:
+        """Получает все события Mint для пула"""
         query = """
-        query GetPositions($poolId: String!, $skip: Int!) {
-            positions(
+        query GetMints($poolId: String!, $skip: Int!) {
+            mints(
                 first: 1000
                 skip: $skip
-                where: { pool: $poolId, liquidity_gt: "0" }
-                orderBy: liquidity
+                where: { pool: $poolId }
+                orderBy: timestamp
                 orderDirection: desc
             ) {
                 id
                 owner
-                liquidity
-                tickLower {
-                    tickIdx
-                }
-                tickUpper {
-                    tickIdx
-                }
-                depositedToken0
-                depositedToken1
-                withdrawnToken0
-                withdrawnToken1
-                collectedFeesToken0
-                collectedFeesToken1
+                tickLower
+                tickUpper
+                amount0
+                amount1
+                timestamp
             }
         }
         """
 
-        try:
-            logger.info(f"Получение позиций для пула {pool_address} из positions subgraph...")
-            skip = 0
+        events = []
+        skip = 0
 
-            while True:
-                # Используем positions subgraph
-                data = self._query(query, {"poolId": pool_id, "skip": skip}, use_positions_subgraph=True)
-                positions_batch = data.get("positions", [])
+        while True:
+            data = self._query(query, {"poolId": pool_id, "skip": skip})
+            batch = data.get("mints", [])
 
-                if not positions_batch:
-                    break
+            if not batch:
+                break
 
-                for pos_data in positions_batch:
-                    position = Position(
-                        id=pos_data["id"],
-                        owner=pos_data["owner"],
-                        pool_address=pool_id,
-                        liquidity=int(pos_data["liquidity"]),
-                        tick_lower=int(pos_data["tickLower"]["tickIdx"]),
-                        tick_upper=int(pos_data["tickUpper"]["tickIdx"]),
-                        deposited_token0=Decimal(pos_data.get("depositedToken0", "0")),
-                        deposited_token1=Decimal(pos_data.get("depositedToken1", "0")),
-                        withdrawn_token0=Decimal(pos_data.get("withdrawnToken0", "0")),
-                        withdrawn_token1=Decimal(pos_data.get("withdrawnToken1", "0")),
-                        collected_fees_token0=Decimal(pos_data.get("collectedFeesToken0", "0")),
-                        collected_fees_token1=Decimal(pos_data.get("collectedFeesToken1", "0"))
-                    )
-                    positions.append(position)
+            events.extend(batch)
 
-                if len(positions_batch) < 1000:
-                    break
+            if len(batch) < 1000:
+                break
 
-                skip += 1000
-                logger.info(f"Загружено {len(positions)} позиций...")
+            skip += 1000
 
-            logger.info(f"✅ Успешно загружено {len(positions)} позиций для пула {pool_address}")
-            return positions
+        return events
 
-        except Exception as e:
-            logger.error(f"❌ Ошибка при получении позиций: {str(e)[:200]}")
-            logger.warning("Проверьте настройку UNISWAP_V3_POSITIONS_SUBGRAPH_URL в .env файле")
-            logger.info("Positions subgraph должен содержать Subgraph ID: EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG")
-            logger.info("Приложение продолжит работу без данных по позициям (Pool Overview и график доступны)")
+    def _get_pool_burns(self, pool_id: str) -> list:
+        """Получает все события Burn для пула"""
+        query = """
+        query GetBurns($poolId: String!, $skip: Int!) {
+            burns(
+                first: 1000
+                skip: $skip
+                where: { pool: $poolId }
+                orderBy: timestamp
+                orderDirection: desc
+            ) {
+                id
+                owner
+                tickLower
+                tickUpper
+                amount0
+                amount1
+                timestamp
+            }
+        }
+        """
 
-            return positions
+        events = []
+        skip = 0
+
+        while True:
+            data = self._query(query, {"poolId": pool_id, "skip": skip})
+            batch = data.get("burns", [])
+
+            if not batch:
+                break
+
+            events.extend(batch)
+
+            if len(batch) < 1000:
+                break
+
+            skip += 1000
+
+        return events
+
+    def _get_pool_collects(self, pool_id: str) -> list:
+        """Получает все события Collect для пула"""
+        query = """
+        query GetCollects($poolId: String!, $skip: Int!) {
+            collects(
+                first: 1000
+                skip: $skip
+                where: { pool: $poolId }
+                orderBy: timestamp
+                orderDirection: desc
+            ) {
+                id
+                owner
+                tickLower
+                tickUpper
+                amount0
+                amount1
+                timestamp
+            }
+        }
+        """
+
+        events = []
+        skip = 0
+
+        while True:
+            data = self._query(query, {"poolId": pool_id, "skip": skip})
+            batch = data.get("collects", [])
+
+            if not batch:
+                break
+
+            events.extend(batch)
+
+            if len(batch) < 1000:
+                break
+
+            skip += 1000
+
+        return events
+
+    def _aggregate_events_to_positions(
+        self,
+        pool_id: str,
+        mints: list,
+        burns: list,
+        collects: list
+    ) -> List[Position]:
+        """
+        Агрегирует события Mint/Burn/Collect в позиции LP
+
+        Группирует события по (owner, tickLower, tickUpper) и суммирует:
+        - Mint → depositedToken0/1
+        - Burn → withdrawnToken0/1
+        - Collect → collectedFeesToken0/1
+        """
+        from collections import defaultdict
+
+        # Структура: {(owner, tickLower, tickUpper): {...}}
+        positions_dict = defaultdict(lambda: {
+            "deposited_token0": Decimal(0),
+            "deposited_token1": Decimal(0),
+            "withdrawn_token0": Decimal(0),
+            "withdrawn_token1": Decimal(0),
+            "collected_fees_token0": Decimal(0),
+            "collected_fees_token1": Decimal(0),
+        })
+
+        # Агрегируем Mint события (deposited)
+        for mint in mints:
+            owner = mint.get("owner", "").lower()
+            tick_lower = int(mint.get("tickLower", 0))
+            tick_upper = int(mint.get("tickUpper", 0))
+            key = (owner, tick_lower, tick_upper)
+
+            positions_dict[key]["deposited_token0"] += Decimal(str(mint.get("amount0", "0")))
+            positions_dict[key]["deposited_token1"] += Decimal(str(mint.get("amount1", "0")))
+
+        # Агрегируем Burn события (withdrawn)
+        for burn in burns:
+            owner = burn.get("owner", "").lower()
+            tick_lower = int(burn.get("tickLower", 0))
+            tick_upper = int(burn.get("tickUpper", 0))
+            key = (owner, tick_lower, tick_upper)
+
+            positions_dict[key]["withdrawn_token0"] += Decimal(str(burn.get("amount0", "0")))
+            positions_dict[key]["withdrawn_token1"] += Decimal(str(burn.get("amount1", "0")))
+
+        # Агрегируем Collect события (fees)
+        for collect in collects:
+            owner = collect.get("owner", "").lower()
+            tick_lower = int(collect.get("tickLower", 0))
+            tick_upper = int(collect.get("tickUpper", 0))
+            key = (owner, tick_lower, tick_upper)
+
+            positions_dict[key]["collected_fees_token0"] += Decimal(str(collect.get("amount0", "0")))
+            positions_dict[key]["collected_fees_token1"] += Decimal(str(collect.get("amount1", "0")))
+
+        # Конвертируем в объекты Position
+        positions = []
+        for (owner, tick_lower, tick_upper), data in positions_dict.items():
+            # Фильтруем позиции без активности
+            if (data["deposited_token0"] == 0 and data["deposited_token1"] == 0 and
+                data["withdrawn_token0"] == 0 and data["withdrawn_token1"] == 0):
+                continue
+
+            # Вычисляем текущую ликвидность (deposited - withdrawn)
+            net_token0 = data["deposited_token0"] - data["withdrawn_token0"]
+            net_token1 = data["deposited_token1"] - data["withdrawn_token1"]
+
+            # Упрощенный расчет ликвидности (можно улучшить)
+            # Для точного расчета нужна формула Uniswap v3
+            liquidity = 0
+            if net_token0 > 0 or net_token1 > 0:
+                # Примерная ликвидность (среднее геометрическое)
+                liquidity = int(float(net_token0 * net_token1) ** 0.5 * 1e18) if net_token0 > 0 and net_token1 > 0 else int(max(float(net_token0), float(net_token1)) * 1e18)
+
+            position = Position(
+                id=f"{owner}#{tick_lower}#{tick_upper}",
+                owner=owner,
+                pool_address=pool_id,
+                liquidity=liquidity,
+                tick_lower=tick_lower,
+                tick_upper=tick_upper,
+                deposited_token0=data["deposited_token0"],
+                deposited_token1=data["deposited_token1"],
+                withdrawn_token0=data["withdrawn_token0"],
+                withdrawn_token1=data["withdrawn_token1"],
+                collected_fees_token0=data["collected_fees_token0"],
+                collected_fees_token1=data["collected_fees_token1"]
+            )
+            positions.append(position)
+
+        # Сортируем по ликвидности (от большей к меньшей)
+        positions.sort(key=lambda p: p.liquidity, reverse=True)
+
+        return positions

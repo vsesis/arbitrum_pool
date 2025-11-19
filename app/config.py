@@ -9,28 +9,30 @@ load_dotenv()
 # Arbitrum One Chain ID
 ARBITRUM_CHAIN_ID = 42161
 
-# === Uniswap V3 Subgraphs для Arbitrum ===
+# === Uniswap V3 Subgraph для Arbitrum ===
 #
-# Uniswap V3 на Arbitrum использует ДВА отдельных subgraph:
-# 1. Основной - для пулов, тиков, свопов
-# 2. Positions - для NFT позиций LP
+# Используем ТОЛЬКО основной Uniswap V3 Arbitrum subgraph для всего:
+# - Пулы, тики, токены
+# - События: Mint, Burn, Collect
+# - Позиции строятся из событий (positions subgraph не содержит нужных данных)
 #
 # Документация: https://docs.uniswap.org/api/subgraph/overview
 
-# 1. Основной Uniswap V3 Arbitrum Subgraph
+# Основной Uniswap V3 Arbitrum Subgraph
 # Subgraph ID: FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM
+# Содержит: Pool, Tick, Token, Mint, Burn, Collect, Swap
 UNISWAP_V3_SUBGRAPH_URL = os.getenv(
     "UNISWAP_V3_SUBGRAPH_URL",
     # Fallback на hosted service (deprecated, может не работать)
     "https://api.thegraph.com/subgraphs/name/ianlapham/uniswap-arbitrum-one"
 )
 
-# 2. Uniswap V3 User Positions Arbitrum Subgraph
-# Subgraph ID: EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG
+# DEPRECATED: Positions subgraph больше не используется
+# Позиции теперь строятся из событий Mint/Burn/Collect основного subgraph
+# Старый Subgraph ID: EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG (не содержит нужных полей)
 UNISWAP_V3_POSITIONS_SUBGRAPH_URL = os.getenv(
     "UNISWAP_V3_POSITIONS_SUBGRAPH_URL",
-    # Если не указан, используем основной (позиции будут недоступны)
-    UNISWAP_V3_SUBGRAPH_URL
+    UNISWAP_V3_SUBGRAPH_URL  # Используем основной для обратной совместимости
 )
 
 # Arbitrum RPC endpoint (опционально для будущих улучшений)
