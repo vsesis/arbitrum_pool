@@ -58,57 +58,97 @@ class PoolAnalysisService:
         self.client = UniswapV3Client()
         self.cache = PoolDataCache()
 
-    def _load_pool_data(self, pool_address: str) -> Tuple[Pool, list[Position], Dict[str, LpOwnerSummary], LiquidityDistribution]:
+    def _load_pool_basic_data(self, pool_address: str) -> Tuple[Pool, LiquidityDistribution]:
         """
-        Загружает все данные пула из subgraph
+        Загружает базовые данные пула (без позиций) из основного subgraph
+
+        Используется для summary и liquidity endpoints, которые должны работать
+        даже если positions subgraph недоступен
 
         Returns:
-            (pool, positions, lp_summaries, distribution)
+            (pool, distribution)
+
+        Raises:
+            Exception: При ошибках запроса к основному subgraph
         """
         pool_address = pool_address.lower()
-        logger.info(f"Загрузка данных пула {pool_address}")
+        logger.info(f"Загрузка базовых данных пула {pool_address}")
 
-        # Получаем пул
-        pool = self.client.get_pool(pool_address)
+        # Получаем пул из основного subgraph
+        pool = self.client.get_pool_basic(pool_address)
         self.cache.set_pool(pool_address, pool)
-
-        # Получаем позиции
-        positions = self.client.get_pool_positions(pool_address)
-        self.cache.set_positions(pool_address, positions)
-
-        # Агрегируем по владельцам
-        lp_summaries = aggregate_positions_by_owner(positions)
-        self.cache.set_lp_summaries(pool_address, lp_summaries)
 
         # Получаем тики и строим распределение
         ticks = self.client.get_pool_ticks(pool_address)
         distribution = calculate_liquidity_distribution(ticks, pool)
         self.cache.set_distribution(pool_address, distribution)
 
-        logger.info(f"Данные пула {pool_address} загружены: {len(positions)} позиций, {len(lp_summaries)} LP")
+        logger.info(f"Базовые данные пула {pool_address} загружены")
+        return pool, distribution
 
-        return pool, positions, lp_summaries, distribution
+    def _load_pool_positions_data(self, pool_address: str) -> Tuple[list[Position], Dict[str, LpOwnerSummary]]:
+        """
+        Загружает данные по позициям из positions subgraph
+
+        Returns:
+            (positions, lp_summaries)
+
+        Raises:
+            Exception: При ошибках запроса к positions subgraph
+        """
+        pool_address = pool_address.lower()
+        logger.info(f"Загрузка позиций для пула {pool_address}")
+
+        # Получаем позиции из positions subgraph
+        positions = self.client.get_positions_for_pool(pool_address)
+        self.cache.set_positions(pool_address, positions)
+
+        # Агрегируем по владельцам
+        lp_summaries = aggregate_positions_by_owner(positions)
+        self.cache.set_lp_summaries(pool_address, lp_summaries)
+
+        logger.info(f"Загружено {len(positions)} позиций, {len(lp_summaries)} LP")
+        return positions, lp_summaries
 
     def get_pool_summary(self, pool_address: str) -> Dict:
-        """Получает краткую информацию о пуле"""
+        """
+        Получает краткую информацию о пуле
+
+        Работает только с основным subgraph (pools, ticks).
+        Если позиции уже загружены, добавляет их статистику.
+        """
         pool_address = pool_address.lower()
 
         # Проверяем кеш
         pool = self.cache.get_pool(pool_address)
         if not pool:
-            pool, positions, lp_summaries, _ = self._load_pool_data(pool_address)
-        else:
-            positions = self.cache.get_positions(pool_address) or []
-            lp_summaries = self.cache.get_lp_summaries(pool_address) or {}
+            # Загружаем только базовые данные (без позиций)
+            pool, _ = self._load_pool_basic_data(pool_address)
 
+        # Получаем базовый summary
         summary = get_pool_summary_data(pool)
-        summary["total_positions"] = len(positions)
-        summary["total_lps"] = len(lp_summaries)
+
+        # Пытаемся добавить статистику по позициям, если они уже загружены
+        positions = self.cache.get_positions(pool_address)
+        lp_summaries = self.cache.get_lp_summaries(pool_address)
+
+        if positions is not None and lp_summaries is not None:
+            summary["total_positions"] = len(positions)
+            summary["total_lps"] = len(lp_summaries)
+        else:
+            # Позиции не загружены - указываем null
+            summary["total_positions"] = None
+            summary["total_lps"] = None
+            logger.info(f"Summary для пула {pool_address} возвращен без данных по позициям")
 
         return summary
 
     def get_liquidity_data(self, pool_address: str) -> Dict:
-        """Получает данные для графика ликвидности"""
+        """
+        Получает данные для графика ликвидности
+
+        Работает только с основным subgraph (pools, ticks).
+        """
         pool_address = pool_address.lower()
 
         # Проверяем кеш
@@ -116,7 +156,8 @@ class PoolAnalysisService:
         distribution = self.cache.get_distribution(pool_address)
 
         if not pool or not distribution:
-            pool, _, _, distribution = self._load_pool_data(pool_address)
+            # Загружаем только базовые данные
+            pool, distribution = self._load_pool_basic_data(pool_address)
 
         return get_liquidity_chart_data(distribution, pool)
 
@@ -127,15 +168,36 @@ class PoolAnalysisService:
         page_size: int = 50,
         search: str = ""
     ) -> Dict:
-        """Получает агрегированные данные по LP"""
+        """
+        Получает агрегированные данные по LP
+
+        Требует positions subgraph.
+        """
         pool_address = pool_address.lower()
 
-        # Проверяем кеш
+        # Проверяем кеш пула
         pool = self.cache.get_pool(pool_address)
-        lp_summaries = self.cache.get_lp_summaries(pool_address)
+        if not pool:
+            # Загружаем базовые данные пула
+            try:
+                pool, _ = self._load_pool_basic_data(pool_address)
+            except Exception as e:
+                logger.error(f"Ошибка загрузки пула: {e}")
+                raise
 
-        if not pool or not lp_summaries:
-            pool, _, lp_summaries, _ = self._load_pool_data(pool_address)
+        # Проверяем кеш позиций
+        lp_summaries = self.cache.get_lp_summaries(pool_address)
+        if not lp_summaries:
+            # Загружаем позиции из positions subgraph
+            try:
+                _, lp_summaries = self._load_pool_positions_data(pool_address)
+            except Exception as e:
+                logger.error(f"❌ Ошибка загрузки позиций для LP summary: {e}")
+                logger.warning("Убедитесь, что UNISWAP_V3_POSITIONS_ARBITRUM_SUBGRAPH настроен правильно")
+                raise Exception(
+                    "Positions subgraph error. "
+                    "Проверьте настройку UNISWAP_V3_POSITIONS_ARBITRUM_SUBGRAPH в .env"
+                )
 
         return get_lp_summary_data(lp_summaries, pool, page, page_size, search)
 
@@ -146,15 +208,36 @@ class PoolAnalysisService:
         page_size: int = 50,
         lp: str = ""
     ) -> Dict:
-        """Получает данные по позициям"""
+        """
+        Получает данные по позициям
+
+        Требует positions subgraph.
+        """
         pool_address = pool_address.lower()
 
-        # Проверяем кеш
+        # Проверяем кеш пула
         pool = self.cache.get_pool(pool_address)
-        positions = self.cache.get_positions(pool_address)
+        if not pool:
+            # Загружаем базовые данные пула
+            try:
+                pool, _ = self._load_pool_basic_data(pool_address)
+            except Exception as e:
+                logger.error(f"Ошибка загрузки пула: {e}")
+                raise
 
-        if not pool or not positions:
-            pool, positions, _, _ = self._load_pool_data(pool_address)
+        # Проверяем кеш позиций
+        positions = self.cache.get_positions(pool_address)
+        if not positions:
+            # Загружаем позиции из positions subgraph
+            try:
+                positions, _ = self._load_pool_positions_data(pool_address)
+            except Exception as e:
+                logger.error(f"❌ Ошибка загрузки позиций: {e}")
+                logger.warning("Убедитесь, что UNISWAP_V3_POSITIONS_ARBITRUM_SUBGRAPH настроен правильно")
+                raise Exception(
+                    "Positions subgraph error. "
+                    "Проверьте настройку UNISWAP_V3_POSITIONS_ARBITRUM_SUBGRAPH в .env"
+                )
 
         return get_positions_data(positions, pool, page, page_size, lp)
 
@@ -162,18 +245,35 @@ class PoolAnalysisService:
         """
         Получает данные для CSV экспорта
 
+        Требует positions subgraph.
+
         Returns:
             (filename, rows) где rows - список словарей для CSV
         """
         pool_address = pool_address.lower()
 
-        # Проверяем кеш
+        # Проверяем кеш пула
         pool = self.cache.get_pool(pool_address)
+        if not pool:
+            try:
+                pool, _ = self._load_pool_basic_data(pool_address)
+            except Exception as e:
+                logger.error(f"Ошибка загрузки пула: {e}")
+                raise
+
+        # Проверяем кеш позиций
         positions = self.cache.get_positions(pool_address)
         lp_summaries = self.cache.get_lp_summaries(pool_address)
 
-        if not pool:
-            pool, positions, lp_summaries, _ = self._load_pool_data(pool_address)
+        if not positions or not lp_summaries:
+            try:
+                positions, lp_summaries = self._load_pool_positions_data(pool_address)
+            except Exception as e:
+                logger.error(f"❌ Ошибка загрузки позиций для CSV: {e}")
+                raise Exception(
+                    "Positions subgraph error. "
+                    "Проверьте настройку UNISWAP_V3_POSITIONS_ARBITRUM_SUBGRAPH в .env"
+                )
 
         if csv_type == "lp-summary":
             # Получаем все данные LP

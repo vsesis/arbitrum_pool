@@ -19,7 +19,9 @@
 ## 📋 Требования
 
 - Python 3.8+
-- Доступ к Uniswap v3 Subgraph для Arbitrum (The Graph)
+- Доступ к The Graph API (два разных subgraph для Uniswap V3 на Arbitrum)
+  - **Основной subgraph**: для пулов, тиков, свопов
+  - **Positions subgraph**: для LP позиций
 
 ## 🚀 Установка
 
@@ -50,25 +52,60 @@ pip install -r requirements.txt
 
 ### 4. Настрой конфигурацию
 
+#### 4.1 Создай .env файл
+
 Скопируй файл `.env.example` в `.env`:
 
 ```bash
 cp .env.example .env
 ```
 
-Отредактируй `.env` и укажи актуальный URL сабграфа:
+#### 4.2 Получи API ключ от The Graph
+
+1. Зарегистрируйся на [The Graph Studio](https://thegraph.com/studio/)
+2. Создай API ключ в разделе "API Keys"
+3. Скопируй свой API ключ
+
+#### 4.3 Настрой переменные окружения
+
+Отредактируй `.env` и укажи оба subgraph endpoint с твоим API ключом:
 
 ```env
-UNISWAP_V3_SUBGRAPH_URL=https://api.thegraph.com/subgraphs/name/ianlapham/uniswap-arbitrum-one
+# 1. Основной Uniswap V3 Arbitrum Subgraph (для пулов, тиков, ликвидности)
+# Subgraph ID: FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM
+UNISWAP_V3_ARBITRUM_SUBGRAPH=https://gateway.thegraph.com/api/<API_KEY>/subgraphs/id/FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM
+
+# 2. Uniswap V3 User Positions Arbitrum Subgraph (для LP позиций)
+# Subgraph ID: EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG
+UNISWAP_V3_POSITIONS_ARBITRUM_SUBGRAPH=https://gateway.thegraph.com/api/<API_KEY>/subgraphs/id/EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG
 ```
 
-**Где взять актуальный URL сабграфа:**
+Замени `<API_KEY>` на твой реальный API ключ в обоих URL.
 
-- Uniswap Docs: https://docs.uniswap.org/api/subgraph/overview
-- The Graph Explorer: https://thegraph.com/explorer
-- Для Arbitrum ищи: "uniswap-v3-arbitrum" или "uniswap-arbitrum-one"
+**Пример:**
+```env
+UNISWAP_V3_ARBITRUM_SUBGRAPH=https://gateway.thegraph.com/api/abc123def456/subgraphs/id/FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM
+UNISWAP_V3_POSITIONS_ARBITRUM_SUBGRAPH=https://gateway.thegraph.com/api/abc123def456/subgraphs/id/EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG
+```
 
-> **Примечание**: Hosted Service может быть deprecated. Рекомендуется использовать децентрализованную сеть The Graph с API ключом.
+#### 4.4 Зачем нужны два разных subgraph?
+
+**ВАЖНО:** Uniswap V3 на Arbitrum использует **ДВА ОТДЕЛЬНЫХ SUBGRAPH**:
+
+1. **Основной Uniswap V3 Arbitrum Subgraph** (`UNISWAP_V3_ARBITRUM_SUBGRAPH`)
+   - Содержит: pools, ticks, swaps, mints, burns, collects
+   - Используется для: получения информации о пуле, графика ликвидности
+   - **НЕ содержит поля `positions`**
+
+2. **Uniswap V3 User Positions Arbitrum Subgraph** (`UNISWAP_V3_POSITIONS_ARBITRUM_SUBGRAPH`)
+   - Содержит: positions (LP NFT позиции)
+   - Используется для: анализа позиций LP, расчёта доходности
+
+Если не настроить оба subgraph:
+- `/api/pool/{address}/summary` и `/liquidity` будут работать (используют только основной subgraph)
+- `/api/pool/{address}/positions` и `/lp-summary` НЕ будут работать (требуют positions subgraph)
+
+> **Примечание**: Hosted Service устаревший. Рекомендуется использовать децентрализованную сеть The Graph с API ключом.
 
 ## 📁 Структура проекта
 
@@ -307,11 +344,21 @@ Total Fees = Collected Fees + Uncollected Fees
 
 ### Источник данных
 
-Все данные получаются из Uniswap v3 Subgraph через GraphQL запросы:
+Приложение использует **два отдельных subgraph** для получения данных:
 
-- **Pool**: `pool(id: $poolId)`
-- **Ticks**: `ticks(where: {poolAddress: $poolId})`
-- **Positions**: `positions(where: {pool: $poolId})`
+#### 1. Основной Uniswap V3 Arbitrum Subgraph
+- **Subgraph ID**: `FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM`
+- **Запросы**:
+  - `pool(id: $poolId)` - информация о пуле
+  - `ticks(where: {poolAddress: $poolId})` - тики для графика ликвидности
+
+#### 2. Uniswap V3 User Positions Arbitrum Subgraph
+- **Subgraph ID**: `EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG`
+- **Запросы**:
+  - `positions(where: {pool: $poolId})` - LP позиции
+
+**Почему два subgraph?**
+Официальный Uniswap V3 subgraph НЕ содержит поле `positions` в Query. Позиции LP нужно запрашивать из отдельного специализированного subgraph для positions.
 
 ## ⚠️ Допущения и ограничения
 
@@ -360,6 +407,33 @@ Total Fees = Collected Fees + Uncollected Fees
 
 ## 🐛 Решение проблем
 
+### Ошибка: "Type Query has no field positions"
+
+**Причина:** Код пытается запросить `positions` у основного Uniswap V3 subgraph, где этого поля нет.
+
+**Решение:**
+1. Убедись, что переменная `UNISWAP_V3_POSITIONS_ARBITRUM_SUBGRAPH` настроена в `.env`
+2. Проверь, что используется правильный Subgraph ID: `EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG`
+3. URL должен быть: `https://gateway.thegraph.com/api/<API_KEY>/subgraphs/id/EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG`
+
+### Ошибка: "Positions subgraph error"
+
+**Причина:** Не удалось подключиться к positions subgraph или он недоступен.
+
+**Что будет работать:**
+- `/api/pool/{address}/summary` - работает (использует основной subgraph)
+- `/api/pool/{address}/liquidity` - работает (использует основной subgraph)
+
+**Что НЕ будет работать:**
+- `/api/pool/{address}/positions` - требует positions subgraph
+- `/api/pool/{address}/lp-summary` - требует positions subgraph
+- CSV экспорт - требует positions subgraph
+
+**Решение:**
+1. Проверь настройку `UNISWAP_V3_POSITIONS_ARBITRUM_SUBGRAPH` в `.env`
+2. Убедись, что API ключ валидный
+3. Проверь лимиты на The Graph API
+
 ### Ошибка: "GraphQL errors" или "pool not found"
 
 - Проверь, что адрес пула корректный и существует на Arbitrum
@@ -369,12 +443,14 @@ Total Fees = Collected Fees + Uncollected Fees
 ### Ошибка: "Connection timeout"
 
 - Проблемы с подключением к subgraph endpoint
-- Попробуй другой endpoint или RPC
+- Попробуй другой endpoint или проверь интернет-соединение
+- Убедись, что не превышен rate limit на The Graph API
 
 ### Пустые данные по позициям
 
 - Возможно, в пуле действительно нет активных позиций
 - Проверь пул в интерфейсе Uniswap: https://app.uniswap.org/
+- Убедись, что `UNISWAP_V3_POSITIONS_ARBITRUM_SUBGRAPH` настроен правильно
 
 ## 📚 Полезные ссылки
 

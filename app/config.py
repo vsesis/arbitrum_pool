@@ -19,18 +19,22 @@ ARBITRUM_CHAIN_ID = 42161
 
 # 1. Основной Uniswap V3 Arbitrum Subgraph
 # Subgraph ID: FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM
-UNISWAP_V3_SUBGRAPH_URL = os.getenv(
-    "UNISWAP_V3_SUBGRAPH_URL",
+# network: arbitrum-one
+# Замените <API_KEY> на ваш ключ от The Graph
+UNISWAP_V3_ARBITRUM_SUBGRAPH = os.getenv(
+    "UNISWAP_V3_ARBITRUM_SUBGRAPH",
     # Fallback на hosted service (deprecated, может не работать)
     "https://api.thegraph.com/subgraphs/name/ianlapham/uniswap-arbitrum-one"
 )
 
 # 2. Uniswap V3 User Positions Arbitrum Subgraph
 # Subgraph ID: EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG
-UNISWAP_V3_POSITIONS_SUBGRAPH_URL = os.getenv(
-    "UNISWAP_V3_POSITIONS_SUBGRAPH_URL",
+# network: arbitrum-one
+# Замените <API_KEY> на ваш ключ от The Graph
+UNISWAP_V3_POSITIONS_ARBITRUM_SUBGRAPH = os.getenv(
+    "UNISWAP_V3_POSITIONS_ARBITRUM_SUBGRAPH",
     # Если не указан, используем основной (позиции будут недоступны)
-    UNISWAP_V3_SUBGRAPH_URL
+    UNISWAP_V3_ARBITRUM_SUBGRAPH
 )
 
 # Arbitrum RPC endpoint (опционально для будущих улучшений)
