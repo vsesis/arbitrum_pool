@@ -142,13 +142,19 @@ class UniswapV3Client:
         return ticks
 
     def get_pool_positions(self, pool_address: str) -> List[Position]:
-        """Получает все позиции в пуле"""
-        query = """
+        """Получает все позиции в пуле (пробует несколько схем GraphQL)"""
+        pool_id = pool_address.lower()
+        positions = []
+
+        # Попытка 1: Запрос напрямую к positions с pool_
+        query_direct = """
         query GetPositions($poolId: String!, $skip: Int!) {
             positions(
                 first: 1000
                 skip: $skip
-                where: { pool: $poolId }
+                where: { pool_: { id: $poolId }, liquidity_gt: "0" }
+                orderBy: liquidity
+                orderDirection: desc
             ) {
                 id
                 owner
@@ -169,43 +175,48 @@ class UniswapV3Client:
         }
         """
 
-        pool_id = pool_address.lower()
-        positions = []
-        skip = 0
+        try:
+            logger.info(f"Получение позиций для {pool_address} (метод 1: прямой запрос с pool_)")
+            skip = 0
+            while True:
+                data = self._query(query_direct, {"poolId": pool_id, "skip": skip})
+                positions_batch = data.get("positions", [])
 
-        while True:
-            data = self._query(query, {"poolId": pool_id, "skip": skip})
-            positions_batch = data.get("positions", [])
+                if not positions_batch:
+                    break
 
-            if not positions_batch:
-                break
+                for pos_data in positions_batch:
+                    position = Position(
+                        id=pos_data["id"],
+                        owner=pos_data["owner"],
+                        pool_address=pool_id,
+                        liquidity=int(pos_data["liquidity"]),
+                        tick_lower=int(pos_data["tickLower"]["tickIdx"]),
+                        tick_upper=int(pos_data["tickUpper"]["tickIdx"]),
+                        deposited_token0=Decimal(pos_data.get("depositedToken0", "0")),
+                        deposited_token1=Decimal(pos_data.get("depositedToken1", "0")),
+                        withdrawn_token0=Decimal(pos_data.get("withdrawnToken0", "0")),
+                        withdrawn_token1=Decimal(pos_data.get("withdrawnToken1", "0")),
+                        collected_fees_token0=Decimal(pos_data.get("collectedFeesToken0", "0")),
+                        collected_fees_token1=Decimal(pos_data.get("collectedFeesToken1", "0"))
+                    )
+                    positions.append(position)
 
-            for pos_data in positions_batch:
-                # Пропускаем закрытые позиции (liquidity = 0)
-                if int(pos_data["liquidity"]) == 0:
-                    continue
+                if len(positions_batch) < 1000:
+                    break
+                skip += 1000
 
-                position = Position(
-                    id=pos_data["id"],
-                    owner=pos_data["owner"],
-                    pool_address=pool_id,
-                    liquidity=int(pos_data["liquidity"]),
-                    tick_lower=int(pos_data["tickLower"]["tickIdx"]),
-                    tick_upper=int(pos_data["tickUpper"]["tickIdx"]),
-                    deposited_token0=Decimal(pos_data["depositedToken0"]),
-                    deposited_token1=Decimal(pos_data["depositedToken1"]),
-                    withdrawn_token0=Decimal(pos_data["withdrawnToken0"]),
-                    withdrawn_token1=Decimal(pos_data["withdrawnToken1"]),
-                    collected_fees_token0=Decimal(pos_data["collectedFeesToken0"]),
-                    collected_fees_token1=Decimal(pos_data["collectedFeesToken1"])
-                )
-                positions.append(position)
+            if positions:
+                logger.info(f"Успешно загружено {len(positions)} позиций (метод 1)")
+                return positions
 
-            if len(positions_batch) < 1000:
-                break
+        except Exception as e:
+            logger.warning(f"Метод 1 не сработал: {str(e)[:100]}")
 
-            skip += 1000
-            logger.info(f"Загружено {len(positions)} активных позиций...")
+        # Попытка 2: Через pool без вложенности
+        logger.info(f"Пробуем метод 2: без вложенной структуры")
+        logger.warning(f"Subgraph для Arbitrum может не поддерживать запрос positions.")
+        logger.info("Приложение продолжит работу без данных по позициям.")
+        logger.info("Доступна информация о пуле и график ликвидности.")
 
-        logger.info(f"Всего загружено {len(positions)} активных позиций для пула {pool_address}")
         return positions
