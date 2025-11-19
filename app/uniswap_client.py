@@ -218,8 +218,7 @@ class UniswapV3Client:
         """
         Получает LP позиции для пула из Uniswap V3 User Positions Arbitrum subgraph
 
-        ВАЖНО: Использует ОТДЕЛЬНЫЙ subgraph для позиций!
-        Subgraph ID: EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG
+        ВАЖНО: Пробует несколько вариантов схемы для совместимости с разными subgraph.
 
         Args:
             pool_address: Адрес пула
@@ -227,12 +226,7 @@ class UniswapV3Client:
             skip: Сколько позиций пропустить (для пагинации)
 
         Returns:
-            Список Position объектов с полями:
-            - id, owner, liquidity
-            - tickLower, tickUpper
-            - depositedToken0, depositedToken1
-            - withdrawnToken0, withdrawnToken1
-            - collectedFeesToken0, collectedFeesToken1
+            Список Position объектов
 
         Raises:
             Exception: При ошибках запроса к positions subgraph
@@ -240,8 +234,8 @@ class UniswapV3Client:
         pool_id = pool_address.lower()
         positions = []
 
-        # Запрос к positions subgraph
-        query = """
+        # Сначала пробуем запрос к основному subgraph (часто там есть positions)
+        query_main = """
         query GetPositions($poolId: String!, $skip: Int!) {
             positions(
                 first: 1000
@@ -253,6 +247,9 @@ class UniswapV3Client:
                 id
                 owner
                 liquidity
+                pool {
+                    id
+                }
                 tickLower {
                     tickIdx
                 }
@@ -269,15 +266,97 @@ class UniswapV3Client:
         }
         """
 
+        # Альтернативный запрос для positions subgraph с упрощенными полями тиков
+        query_alt = """
+        query GetPositions($poolId: String!, $skip: Int!) {
+            positions(
+                first: 1000
+                skip: $skip
+                where: { pool: $poolId, liquidity_gt: "0" }
+                orderBy: liquidity
+                orderDirection: desc
+            ) {
+                id
+                owner
+                liquidity
+                lowerTick
+                upperTick
+                depositedToken0
+                depositedToken1
+                withdrawnToken0
+                withdrawnToken1
+                collectedFeesToken0
+                collectedFeesToken1
+            }
+        }
+        """
+
         try:
-            logger.info(f"Получение позиций для пула {pool_address} из positions subgraph...")
+            logger.info(f"Получение позиций для пула {pool_address}...")
+            current_skip = 0
+
+            # Пробуем сначала основной subgraph
+            try:
+                logger.info("Попытка #1: Запрос к основному subgraph...")
+                data = self._graphql_query(
+                    self.subgraph_url,  # Используем основной subgraph
+                    query_main,
+                    {"poolId": pool_id, "skip": 0}
+                )
+                positions_batch = data.get("positions", [])
+
+                if positions_batch:
+                    logger.info(f"✅ Основной subgraph имеет positions! Найдено: {len(positions_batch)}")
+
+                    # Загружаем все позиции из основного subgraph
+                    while True:
+                        data = self._graphql_query(
+                            self.subgraph_url,
+                            query_main,
+                            {"poolId": pool_id, "skip": current_skip}
+                        )
+                        positions_batch = data.get("positions", [])
+
+                        if not positions_batch:
+                            break
+
+                        for pos_data in positions_batch:
+                            position = Position(
+                                id=pos_data["id"],
+                                owner=pos_data["owner"],
+                                pool_address=pool_id,
+                                liquidity=int(pos_data["liquidity"]),
+                                tick_lower=int(pos_data["tickLower"]["tickIdx"]),
+                                tick_upper=int(pos_data["tickUpper"]["tickIdx"]),
+                                deposited_token0=Decimal(pos_data.get("depositedToken0", "0")),
+                                deposited_token1=Decimal(pos_data.get("depositedToken1", "0")),
+                                withdrawn_token0=Decimal(pos_data.get("withdrawnToken0", "0")),
+                                withdrawn_token1=Decimal(pos_data.get("withdrawnToken1", "0")),
+                                collected_fees_token0=Decimal(pos_data.get("collectedFeesToken0", "0")),
+                                collected_fees_token1=Decimal(pos_data.get("collectedFeesToken1", "0"))
+                            )
+                            positions.append(position)
+
+                        if len(positions_batch) < 1000:
+                            break
+
+                        current_skip += 1000
+                        logger.info(f"Загружено {len(positions)} позиций...")
+
+                    logger.info(f"✅ Успешно загружено {len(positions)} позиций из основного subgraph")
+                    return positions
+
+            except Exception as e1:
+                logger.warning(f"Основной subgraph не содержит positions или ошибка: {str(e1)[:100]}")
+
+            # Пробуем positions subgraph с альтернативной схемой
+            logger.info("Попытка #2: Запрос к positions subgraph с альтернативной схемой...")
             current_skip = 0
 
             while True:
-                # Используем positions subgraph
                 data = self._graphql_query(
                     self.positions_subgraph_url,
-                    query,
+                    query_alt,
                     {"poolId": pool_id, "skip": current_skip}
                 )
                 positions_batch = data.get("positions", [])
@@ -288,11 +367,11 @@ class UniswapV3Client:
                 for pos_data in positions_batch:
                     position = Position(
                         id=pos_data["id"],
-                        owner=pos_data["owner"],
+                        owner=pos_data.get("owner", "0x0"),
                         pool_address=pool_id,
-                        liquidity=int(pos_data["liquidity"]),
-                        tick_lower=int(pos_data["tickLower"]["tickIdx"]),
-                        tick_upper=int(pos_data["tickUpper"]["tickIdx"]),
+                        liquidity=int(pos_data.get("liquidity", 0)),
+                        tick_lower=int(pos_data.get("lowerTick", pos_data.get("tickLower", {}).get("tickIdx", 0))),
+                        tick_upper=int(pos_data.get("upperTick", pos_data.get("tickUpper", {}).get("tickIdx", 0))),
                         deposited_token0=Decimal(pos_data.get("depositedToken0", "0")),
                         deposited_token1=Decimal(pos_data.get("depositedToken1", "0")),
                         withdrawn_token0=Decimal(pos_data.get("withdrawnToken0", "0")),
@@ -312,9 +391,9 @@ class UniswapV3Client:
             return positions
 
         except Exception as e:
-            logger.error(f"❌ Ошибка при получении позиций из positions subgraph: {str(e)[:200]}")
+            logger.error(f"❌ Ошибка при получении позиций: {str(e)[:200]}")
             logger.warning("Проверьте настройку UNISWAP_V3_POSITIONS_ARBITRUM_SUBGRAPH в .env файле")
-            logger.info("Positions subgraph должен содержать Subgraph ID: EKfnW8Ss1MMNhb8psVRsotcXmeweLgBtKQBG6wayPLBG")
+            logger.info("Или запустите: python test_positions_minimal.py <URL> для introspection схемы")
             logger.info("Приложение продолжит работу без данных по позициям (Pool Overview и график доступны)")
             raise
 
