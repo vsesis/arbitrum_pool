@@ -306,6 +306,35 @@
         let positionLpFilter = '';
         let chart = null;
 
+        // Format large numbers with separators and abbreviations
+        function formatNumber(num, decimals = 2) {
+            const n = parseFloat(num);
+            if (isNaN(n)) return '0';
+
+            // Handle very large numbers with abbreviations
+            if (n >= 1e12) {
+                return (n / 1e12).toFixed(decimals) + 'T';
+            } else if (n >= 1e9) {
+                return (n / 1e9).toFixed(decimals) + 'B';
+            } else if (n >= 1e6) {
+                return (n / 1e6).toFixed(decimals) + 'M';
+            } else if (n >= 1e3) {
+                return (n / 1e3).toFixed(decimals) + 'K';
+            } else {
+                return n.toFixed(decimals);
+            }
+        }
+
+        // Format number with thousand separators (for exact values)
+        function formatNumberWithCommas(num, decimals = 0) {
+            const n = parseFloat(num);
+            if (isNaN(n)) return '0';
+
+            const parts = n.toFixed(decimals).split('.');
+            parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            return parts.join('.');
+        }
+
         // Analyze pool
         async function analyzePool() {
             const poolAddress = document.getElementById('poolAddress').value.trim();
@@ -352,7 +381,7 @@
             document.getElementById('poolPrice').textContent =
                 `${data.current_price.toFixed(2)} ${data.token1.symbol}`;
             document.getElementById('poolLiquidity').textContent =
-                parseFloat(data.liquidity).toExponential(2);
+                formatNumber(data.liquidity, 2);
             document.getElementById('poolLps').textContent = data.total_lps;
             document.getElementById('poolPositions').textContent = data.total_positions;
         }
@@ -404,7 +433,7 @@
                             bodyColor: '#9ca3af',
                             callbacks: {
                                 label: function(context) {
-                                    return `Liquidity: ${context.parsed.y.toExponential(2)}`;
+                                    return `Liquidity: ${formatNumber(context.parsed.y, 2)}`;
                                 }
                             }
                         }
@@ -427,7 +456,7 @@
                             ticks: {
                                 color: '#9ca3af',
                                 callback: function(value) {
-                                    return value.toExponential(0);
+                                    return formatNumber(value, 1);
                                 }
                             },
                             title: {
@@ -494,7 +523,7 @@
                 row.innerHTML = `
                     <td><span class="font-mono text-xs">${pos.owner.slice(0, 6)}...${pos.owner.slice(-4)}</span></td>
                     <td>${pos.price_lower.toFixed(2)} - ${pos.price_upper.toFixed(2)}</td>
-                    <td>${parseFloat(pos.liquidity).toExponential(2)}</td>
+                    <td>${formatNumber(pos.liquidity, 2)}</td>
                     <td class="positive">${pos.total_fees_token0.toFixed(6)} ${token0}<br>${pos.total_fees_token1.toFixed(2)} ${token1}</td>
                 `;
             });
